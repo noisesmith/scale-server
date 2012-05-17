@@ -83,7 +83,7 @@ div.multicolumn8 {
 
 (def cents-base (Math/pow 2 (/ 1 1200)))
 
-(defn all-spots [frequencies]
+(defn all-spots [freqs]
   (let [string-data [[fundamental 1]
 		     [(* fundamental (Math/pow cents-base 700)) 163]
 		     [(* fundamental (Math/pow cents-base 1400)) 320]
@@ -102,7 +102,7 @@ div.multicolumn8 {
 			(map (fn [hz-pos]
 				 (coord hz hz-pos))
 			     string-data))
-		    frequencies))))
+		    freqs))))
 
 (defn line-mult [line comment]
   (cond
@@ -134,14 +134,13 @@ div.multicolumn8 {
      true
        (mults-rec (cons mult mults) lines comment)))))
 
-; fix this to be iterative or stack recursive -
-; I think precaching by the browser is causing stack overflow errors
-(defn frequencies-rec [base mults acc]
-  (if (> base (* 440 4)) ; maximum frequency we display
-      acc
-    (let [next (sort > (reduce conj acc (map (fn [x] (* x base)) mults)))]
-      (if (= next '()) '()
-	(frequencies-rec (nth next 0) mults next)))))
+(defn freqs-hz [base mults]
+  (loop [base base mults mults acc []]
+	(if (> base (* 440 4)) ; maximum frequency we display
+	    acc
+	  (let [next (sort > (reduce conj acc (map (fn [x] (* x base)) mults)))]
+	    (if (= next '()) '()
+	      (recur (nth next 0) mults next))))))
 
 (defn show-info [mults]
   (let [log (fn [x base] (/ (Math/log x) (Math/log base)))
@@ -149,10 +148,13 @@ div.multicolumn8 {
     (map (fn [x]
 	     (let [cents (log x cents-base)
 		   degree (mod (int (/ cents 100)) 12)]
-	       (str "<br>fundamental * " (format "%.4f" (* x 1.0)) "<br>"
-		    (format "%.3f" cents) " cents<br>"
+	       (str "<br>fundamental * "
+		    (if (= (class x) clojure.lang.Ratio)
+			x
+		      (format "%.4f" (* x 1.0))) " / "
+		    (format "%.3f" cents) " cents / "
 		    (nth degrees degree)
-		    "+" (int (- (mod cents 1200) (* degree 100))) "<br>"
+		    "+" (int (- (mod cents 1200) (* degree 100))) " / "
 		    (format "%.4f" (* x fundamental)) " hz<br>"))) mults)))
      
 (defn process-scale-request [req]
@@ -171,16 +173,14 @@ div.multicolumn8 {
 	 scale-text
 	 "</pre>"
 	 (apply str (show-info mults))
-	 (diagram (all-spots (frequencies-rec base
-					      (sort > mults)
-					      (list base))))
+	 (diagram (all-spots (freqs-hz base (sort > mults))))
 	 footer)))
 
-;(def scl-memo (memoize list-scales))
+(def scl-memo (memoize list-scales))
 
 (defroutes main-routes
-  (GET "/" [] (list-scales))
-  (GET "/list" [] (list-scales))
+  (GET "/" [] (scl-memo))
+  (GET "/list" [] (scl-memo))
   (GET "/scales.css" [] stylesheet)
   (route/resources "/")
   (GET "/:req" [req]
