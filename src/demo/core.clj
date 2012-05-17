@@ -148,14 +148,14 @@ div.multicolumn8 {
     (map (fn [x]
 	     (let [cents (log x cents-base)
 		   degree (mod (int (/ cents 100)) 12)]
-	       (str "<br>fundamental * "
+	       (str "<tr><td>"
 		    (if (= (class x) clojure.lang.Ratio)
 			x
-		      (format "%.4f" (* x 1.0))) " / "
-		    (format "%.3f" cents) " cents / "
+		      (format "%.4f" (* x 1.0))) "</td><td>"
+		    (format "%.3f" cents) "</td><td>"
 		    (nth degrees degree)
-		    "+" (int (- (mod cents 1200) (* degree 100))) " / "
-		    (format "%.4f" (* x fundamental)) " hz<br>"))) mults)))
+		    "+" (int (- (mod cents 1200) (* degree 100))) "</td><td>"
+		    (format "%.4f" (* x fundamental)) "</td></tr>"))) mults)))
      
 (defn process-scale-request [req]
   (let [scale-request (str/split req #":")
@@ -168,11 +168,14 @@ div.multicolumn8 {
 				   (.getMessage e))))
        lines (str/split-lines scale-text)
        base 130.813
-       mults (sort (mults-rec '() lines false))]
+       mults (sort (mults-rec '(1) lines false))]
     (str header "<h1>" name "</h1><br><div class=\"multicolumn2\"><pre>"
 	 scale-text
 	 "</pre>"
+	 "<table border=\"1\"><tr>"
+	 "<td>mult</td><td>cents</td><td>note</td><td>hz</td></tr>"
 	 (apply str (show-info mults))
+	 "</table>"
 	 (diagram (all-spots (freqs-hz base (sort > mults))))
 	 footer)))
 
