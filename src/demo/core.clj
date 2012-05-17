@@ -107,9 +107,9 @@ div.multicolumn8 {
 (defn line-mult [line comment]
   (cond
    (re-find #"!.*scl" line)
-     false
+     :do-nothing
    (= line "!")
-     true
+     :toggle-comment
    (and (not comment) (re-find #"[0-9]+/[0-9]+" line))
      (let [match (re-find #"([0-9]+)/([0-9]+)" line)]
        (/ (read-string (nth match 1))
@@ -118,7 +118,7 @@ div.multicolumn8 {
      (let [match (re-find #"([0-9]+\.?[0-9]*)" line)]
      	 (Math/pow cents-base (read-string (nth match 1))))
    true
-    false))
+    :do-nothing))
 
 (defn mults-rec [mults lines comment]
   (if (= lines '())
@@ -127,9 +127,9 @@ div.multicolumn8 {
         lines (rest lines)
 	mult (line-mult line comment)]
     (cond
-     (not mult)
+     (= mult :do-nothing)
        (mults-rec mults lines comment)
-     (= mult true)
+     (= mult :toggle-comment)
        (mults-rec mults lines (not comment))
      true
        (mults-rec (cons mult mults) lines comment)))))
