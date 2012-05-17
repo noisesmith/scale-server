@@ -22,7 +22,7 @@ div.multicolumn8 {
 
 (defn name-to-url [fname]
   (let [name (nth (re-find #"(.*)(.scl)" fname) 1)]
-       (str "<a href=\"" name "\">" name "</a> \n")))
+       (str "<a href=\"showscale?scale=" name "\">" name "</a> \n")))
 
 (defn list-scales []
   (let [scale-files (fs/list-dir "scl")
@@ -198,8 +198,10 @@ div.multicolumn8 {
   (GET "/list" [] (scl-memo))
   (GET "/scales.css" [] stylesheet)
   (route/resources "/")
-  (GET "/:req" [req]
-       (process-scale-request req))
+  (GET "/showscale*" {params :query-params}
+       (process-scale-request (get params "scale")))
+;  (GET "/:req" [req]
+;       (process-scale-request req))
   (route/not-found "<h1>Page not found</h1>"))
 
 (def app
