@@ -134,6 +134,18 @@ div.multicolumn8 {
      true
        (mults-rec (cons mult mults) lines comment)))))
 
+(defn lines-rec [lines]
+  "scoop up the header"
+  (if (= lines '())
+      []
+    (let [line (first lines)
+	  lines (rest lines)
+	  read (line-mult line false)]
+      (if (or (= read :do-nothing) (= read :toggle-comment))
+	  (lines-rec lines)
+	;; after our first numeric result, we can start looking for a multiplier
+	(mults-rec '() lines true)))))
+
 (defn freqs-hz [base mults]
   (loop [base base mults mults acc []]
 	(if (> base (* 440 4)) ; maximum frequency we display
@@ -168,7 +180,7 @@ div.multicolumn8 {
 				   (.getMessage e))))
        lines (str/split-lines scale-text)
        base 130.813
-       mults (sort (mults-rec '(1) lines false))]
+       mults (sort (lines-rec lines))]
     (str header "<h1>" name "</h1><br><div class=\"multicolumn2\"><pre>"
 	 scale-text
 	 "</pre>"
