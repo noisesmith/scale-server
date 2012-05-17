@@ -173,7 +173,7 @@ div.multicolumn8 {
 	 scale-text
 	 "</pre>"
 	 "<table border=\"1\"><tr>"
-	 "<td>mult</td><td>cents</td><td>note</td><td>hz</td></tr>"
+	 "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
 	 (apply str (show-info mults))
 	 "</table>"
 	 (diagram (all-spots (freqs-hz base (sort > mults))))
