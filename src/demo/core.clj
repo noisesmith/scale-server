@@ -144,7 +144,7 @@ div.multicolumn8 {
       (if (or (= read :do-nothing) (= read :toggle-comment))
 	  (lines-rec lines)
 	;; after our first numeric result, we can start looking for a multiplier
-	(mults-rec '() lines true)))))
+	(mults-rec '(1) lines true)))))
 
 (defn freqs-hz [base mults]
   (loop [base base mults mults acc []]
