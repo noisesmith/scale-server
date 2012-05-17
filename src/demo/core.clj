@@ -114,7 +114,7 @@ div.multicolumn8 {
      (let [match (re-find #"([0-9]+)/([0-9]+)" line)]
        (/ (read-string (nth match 1))
 	  (read-string (nth match 2))))
-   (and (not comment) (re-find #"[0-9]+\.?[0-9]*" line))
+   (and (not comment) (re-find #"^ *[0-9]+\.?[0-9]*" line))
      (let [match (re-find #"([0-9]+\.?[0-9]*)" line)]
      	 (Math/pow cents-base (read-string (nth match 1))))
    true
