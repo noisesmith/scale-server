@@ -51,26 +51,41 @@ div.multicolumn8 {
 (defn diagram [positions]
   (let [svg-rect (fn [x0 y0 x1 y1 color]
 		     (str "<path d=\"M" x0 " " y0 " L" x1 " " y0 " L" x1 " "
-			  y1 " L" x0 " " y1 "Z\" fill=\"" color "\"/>"))
+			  y1 " L" x0 " " y1 "Z\" fill=\"" color "\"/>\n"))
 	svg-dot (fn [x y r c]
 		    (str "<circle cx=\"" x "\" cy=\"" y "\" r=\"" r
 			 "\" stroke=\"black\""
-			 " stroke-width=\"2\" fill=\"" c "\"/>"))
+			 " stroke-width=\"2\" fill=\"" c "\"/>\n"))
 	svg-arrow (fn [x y c]
 		      (str "<path d=\"M0 0 L7 -5 L7 5 L0 0 Z\" fill=\"" c
 			   "\" stroke=\"black\""
-			   " transform=\"" "translate(" x "," y ")\"/>"))]
-     (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 200 600\">"
-	  ; strings
-	  (svg-rect 35 10 53 600 "black")
-	  (svg-rect 75 10 89 600 "black")
-	  (svg-rect 115 10 126 600 "black")
-	  (svg-rect 155 10 163 600 "black")
-	  (apply str (map (fn [x] (svg-arrow (nth x 0) (+ 10 (nth x 1)) "red"))
+			   " transform=\"" "translate("
+			   x "," y ")\"/>\n"))
+	string-start 10.
+	string-end 600.
+	string-len (- string-end string-start)
+	string-x0s [35 75 115 155]
+	string-x1s [53 89 126 163]]
+     (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 200 600\">\n"
+	  ; display instrument strings
+	  (apply str (map (fn [x]
+			      (svg-rect (nth string-x0s x)
+					string-start
+					(nth string-x1s x)
+					string-end "black"))
+			  (range 0 4)))
+	  ; display fintering markings
+	  (apply str (map (fn [x] (svg-arrow (+ (nth string-x1s (nth x 0)) 2)
+					     (+ string-start
+						(* string-len (nth x 1)))
+					     "red"))
 			  positions))
-	  (svg-dot 25 308 8 "gray") ;octave
-	  (svg-dot 25 456 6 "gray") ;two octave
-	  (svg-dot 25 206 6 "gray") ;fifth
+	  ; display reference marks
+	  (svg-dot 25 (+ string-start (/ string-len 2)) 8 "gray") ;octave
+	  (svg-dot 25 (+ string-start (* string-len (/ 3 4))) 6 "gray") ;two oct
+	  (svg-dot 25 (+ string-start (/ string-len 3)) 6 "gray") ;fifth
+	  (svg-dot 25 (+ string-start (/ string-len 4)) 6 "gray") ;fourth
+	  (svg-dot 25 (+ string-start (/ string-len 5)) 6 "gray") ;third
 	  "</svg></div>\n")))
 
 (def fundamental 130.813)
@@ -78,18 +93,18 @@ div.multicolumn8 {
 (def cents-base (Math/pow 2 (/ 1 1200)))
 
 (defn all-spots [freqs]
-  (let [string-data [[fundamental 55]
-		     [(* fundamental (Math/pow cents-base 700)) 91]
-		     [(* fundamental (Math/pow cents-base 1400)) 127]
-		     [(* fundamental (Math/pow cents-base 2100)) 165]]
-	string-scale 600
+  (let [string-data [[fundamental 0]
+		     [(* fundamental (Math/pow cents-base 700)) 1]
+		     [(* fundamental (Math/pow cents-base 1400)) 2]
+		     [(* fundamental (Math/pow cents-base 2100)) 3]]
+	two-oct-plus 4.1
 	coord (fn [hz hz-pos]
 		  (let [base-hz (nth hz-pos 0)
 			pos (nth hz-pos 1)]
-		    (if (or (< hz base-hz) (> hz (* base-hz 4)))
+					; stop display at just over two octaves
+		    (if (or (< hz base-hz) (> hz (* base-hz two-oct-plus)))
 			false
-			[pos (- string-scale (* string-scale
-						      (/ base-hz hz)))])))
+			[pos (- 1 (/ base-hz hz))])))
 	output '()]
     (filter identity
 	    (mapcat (fn [hz] 
@@ -186,7 +201,7 @@ div.multicolumn8 {
 	  (apply str (show-info mults))
 	  "</table>"
 	  "<pre>"
-	  scale-text
+	  (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
 	  "</pre>"
 	  "</div>"
 	  (diagram (all-spots (freqs-hz base (sort > mults))))
