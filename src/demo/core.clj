@@ -6,19 +6,32 @@
 	      [fs.core :as fs]))
 
 (def stylesheet
-"div.multicolumn2 {
-	[-moz- | -webkit-]column-width: 400px;
-	[-moz- | -webkit-]column-gap: 20px;
+     {:status 200
+     :headers {"Content-Type" "text/css"}
+     :body
+     "
+div.multicolumn2 {
+	[-moz- | -webkit-]column-width: 512px;
+	[-moz- | -webkit-]column-gap: 10px;
         -moz-column-count: 2;
         -webkit-column-count: 2;
+}
+
+div.multicolumn3 {
+	[-moz- | -webkit-]column-width: 400px;
+	[-moz- | -webkit-]column-gap: 10px;
+        -moz-column-count: 3;
+        -webkit-column-count: 3;
+}
+
 div.multicolumn8 {
 	[-moz- | -webkit-]column-width: 150px;
-	[-moz- | -webkit-]column-gap: 20px;
+	[-moz- | -webkit-]column-gap: 10px;
         -moz-column-count: 8;
         -webkit-column-count: 8;
 
 }
-")
+"})
 
 
 (defn name-to-url [fname]
@@ -44,10 +57,10 @@ div.multicolumn8 {
 			 "\" stroke=\"black\""
 			 " stroke-width=\"2\" fill=\"" c "\"/>"))
 	svg-arrow (fn [x y c]
-		      (str "<path d=\"M0 0 L10 -5 L10 5 L0 0 Z\" fill=\"" c
+		      (str "<path d=\"M0 0 L7 -5 L7 5 L0 0 Z\" fill=\"" c
 			   "\" stroke=\"black\""
 			   " transform=\"" "translate(" x "," y ")\"/>"))]
-     (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 600 800\">"
+     (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 200 600\">"
 	  ; strings
 	  (svg-rect 35 10 53 600 "black")
 	  (svg-rect 75 10 89 600 "black")
@@ -55,8 +68,8 @@ div.multicolumn8 {
 	  (svg-rect 155 10 163 600 "black")
 	  (apply str (map (fn [x] (svg-arrow (nth x 0) (+ 10 (nth x 1)) "red"))
 			  positions))
-	  (svg-dot 25 308 8 "gray")
-	  (svg-dot 25 456 6 "gray")
+	  (svg-dot 25 308 8 "gray") ;octave
+	  (svg-dot 25 456 6 "gray") ;two octave
 	  (svg-dot 25 206 6 "gray") ;fifth
 	  "</svg></div>\n")))
 
@@ -167,13 +180,15 @@ div.multicolumn8 {
      :headers {"Content-Type" "application/xhtml+xml"}
      :body
      (str header "<h1>" name "</h1><br/><div class=\"multicolumn2\">"
-	  "<div float=\"left\" margin=\"0\" padding=\"0\"><pre>"
-	  scale-text
-	  "</pre>"
+	  "<div float=\"left\" margin=\"0\" padding=\"0\">"
 	  "<table border=\"1\"><tr>"
 	  "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
 	  (apply str (show-info mults))
-	  "</table></div>"
+	  "</table>"
+	  "<pre>"
+	  scale-text
+	  "</pre>"
+	  "</div>"
 	  (diagram (all-spots (freqs-hz base (sort > mults))))
 	  footer)}))
 
