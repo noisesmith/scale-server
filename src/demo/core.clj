@@ -48,7 +48,7 @@ div.multicolumn8 {
 	    (apply str (map name-to-url (sort scale-files)))
 	    footer)))
 
-(defn diagram [positions]
+(defn diagram [positions scale-count]
   (let [svg-rect (fn [x0 y0 x1 y1 color]
 		     (str "<path d=\"M" x0 " " y0 " L" x1 " " y0 " L" x1 " "
 			  y1 " L" x0 " " y1 "Z\" fill=\"" color "\"/>\n"))
@@ -65,7 +65,25 @@ div.multicolumn8 {
 	string-end 600.
 	string-len (- string-end string-start)
 	string-x0s [35 75 115 155]
-	string-x1s [53 89 126 163]]
+	string-x1s [53 89 126 163]
+	color-cycle
+          (fn [n reps]
+	      (let [from-0 (< reps 0)
+			   reps (Math/abs reps)
+			   count (int (Math/ceil (/ n reps)))]
+		(cycle
+		 (map (fn [x]
+			  (mod (int (* (if from-0 (- count x) x)
+				       (/ 255.0 count)))
+			       256))
+		      (range 0 count)))))
+        ;; get unique colors for each degree of the scale
+        ;; for scale-count degrees of the scale, this gets us scale-count colors
+	colors (map (fn [r g b]
+			(format "#%02X%02X%02X" r g b))
+		    (color-cycle scale-count -1)
+		    (color-cycle scale-count 2)
+		    (color-cycle scale-count 3))]
      (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 200 600\">\n"
 	  ; display instrument strings
 	  (apply str (map (fn [x]
@@ -74,11 +92,12 @@ div.multicolumn8 {
 					(nth string-x1s x)
 					string-end "black"))
 			  (range 0 4)))
-	  ; display fintering markings
-	  (apply str (map (fn [x] (svg-arrow (+ (nth string-x1s (nth x 0)) 2)
-					     (+ string-start
-						(* string-len (nth x 1)))
-					     "red"))
+	  ; display fingering markings
+	  (apply str (map (fn [x]
+			      (svg-arrow (+ (nth string-x1s (nth x 0)) 2)
+					 (+ string-start
+					    (* string-len (nth x 1)))
+					 (nth colors (nth x 2))))
 			  positions))
 	  ; display reference marks
 	  (svg-dot 25 (+ string-start (/ string-len 2)) 8 "gray") ;octave
@@ -86,7 +105,8 @@ div.multicolumn8 {
 	  (svg-dot 25 (+ string-start (/ string-len 3)) 6 "gray") ;fifth
 	  (svg-dot 25 (+ string-start (/ string-len 4)) 6 "gray") ;fourth
 	  (svg-dot 25 (+ string-start (/ string-len 5)) 6 "gray") ;third
-	  "</svg></div>\n")))
+	  "</svg>"
+	  "</div>\n")))
 
 (def fundamental 130.813)
 
@@ -98,18 +118,17 @@ div.multicolumn8 {
 		     [(* fundamental (Math/pow cents-base 1400)) 2]
 		     [(* fundamental (Math/pow cents-base 2100)) 3]]
 	two-oct-plus 4.1
-	coord (fn [hz hz-pos]
+	coord (fn [hz hz-pos degree]
 		  (let [base-hz (nth hz-pos 0)
 			pos (nth hz-pos 1)]
 					; stop display at just over two octaves
 		    (if (or (< hz base-hz) (> hz (* base-hz two-oct-plus)))
 			false
-			[pos (- 1 (/ base-hz hz))])))
-	output '()]
+			[pos (- 1 (/ base-hz hz)) degree])))]
     (filter identity
-	    (mapcat (fn [hz] 
+	    (mapcat (fn [hz-deg] 
 			(map (fn [hz-pos]
-				 (coord hz hz-pos))
+				 (coord (nth hz-deg 0) hz-pos (nth hz-deg 1)))
 			     string-data))
 		    freqs))))
 
@@ -129,19 +148,19 @@ div.multicolumn8 {
    true
     :do-nothing))
 
-(defn mults-rec [mults lines comment]
+(defn mults-rec [mults lines comment count]
   (if (= lines '())
-      mults
+      [mults count]
   (let [line (first lines)
         lines (rest lines)
 	mult (line-mult line comment)]
     (cond
      (= mult :do-nothing)
-       (mults-rec mults lines comment)
+       (mults-rec mults lines comment count)
      (= mult :toggle-comment)
-       (mults-rec mults lines (not comment))
+       (mults-rec mults lines (not comment) count)
      true
-       (mults-rec (cons mult mults) lines comment)))))
+       (mults-rec (cons mult mults) lines comment (+ count 1))))))
 
 (defn lines-rec [lines]
   "scoop up the header"
@@ -153,15 +172,20 @@ div.multicolumn8 {
       (if (or (= read :do-nothing) (= read :toggle-comment))
 	  (lines-rec lines)
 	;; after our first numeric result, we can start looking for a multiplier
-	(mults-rec '(1) lines true)))))
+	(mults-rec '(1) lines true 0)))))
 
-(defn freqs-hz [base mults]
-  (loop [base base mults mults acc []]
+(defn freqs-hz [base mults nmults]
+  (loop [base base mults mults degrees (cycle (range 0 nmults)) acc []]
 	(if (> base (* 440 4)) ; maximum frequency we display
 	    acc
-	  (let [next (sort > (reduce conj acc (map (fn [x] (* x base)) mults)))]
+	  (let [next (sort (fn [x y]
+			       (> (first x)
+				  (first y)))
+			   (reduce conj acc (map (fn [d x] [(* x base) d])
+						   degrees
+						   mults)))]
 	    (if (= next '()) '()
-	      (recur (nth next 0) mults next))))))
+	      (recur (first (first next)) mults degrees next))))))
 
 (defn show-info [mults]
   (let [log (fn [x base] (/ (Math/log x) (Math/log base)))
@@ -176,7 +200,8 @@ div.multicolumn8 {
 		    (format "%.3f" cents) "</td><td>"
 		    (nth degrees degree)
 		    "+" (int (- (mod cents 1200) (* degree 100))) "</td><td>"
-		    (format "%.4f" (* x fundamental)) "</td></tr>"))) mults)))
+		    (format "%.4f" (* x fundamental)) "</td></tr>")))
+	 (sort mults))))
      
 (defn process-scale-request [req]
   (let [scale-request (str/split req #":")
@@ -190,7 +215,9 @@ div.multicolumn8 {
 				   (.getMessage e))))
        lines (str/split-lines scale-text)
        base 130.813
-       mults (sort (lines-rec lines))]
+       mults+len (lines-rec lines)
+       mults-len (nth mults+len 1)
+       mults (nth mults+len 0)]
     {:status 200
      :headers {"Content-Type" "application/xhtml+xml"}
      :body
@@ -204,7 +231,8 @@ div.multicolumn8 {
 	  (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
 	  "</pre>"
 	  "</div>"
-	  (diagram (all-spots (freqs-hz base (sort > mults))))
+	  (diagram (all-spots (freqs-hz base (sort > mults) mults-len))
+		   mults-len)
 	  footer)}))
 
 (def scl-memo (memoize list-scales))
@@ -216,8 +244,6 @@ div.multicolumn8 {
   (route/resources "/")
   (GET "/showscale*" {params :query-params}
 		  (process-scale-request (get params "scale")))
-;  (GET "/:req" [req]
-;       (process-scale-request req))
   (route/not-found "<h1>Page not found</h1>"))
 
 (def app
