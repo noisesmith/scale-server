@@ -1,4 +1,4 @@
-(ns demo.core
+(ns scale-server.core
     (:use compojure.core)
     (:require [compojure.route :as route]
 	      [compojure.handler :as handler]
