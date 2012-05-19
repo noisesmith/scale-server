@@ -8,8 +8,8 @@ if you have clojure and lein installed, it should suffice to execute the
 run script from the top directory
 
 ## bugs/todo
-
-* currently the svg fails to display in firefox
+use hidden form data to set instrument tuning / number of strings /
+reference points on the string
 
 Copyright © 2012 justin smith
 
