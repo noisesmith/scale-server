@@ -69,8 +69,10 @@ div.multicolumn8 {
 	nstrings (reduce (fn [x y] (+ 1 x)) 0 strings)
 	string-x0s (map (fn [x] (+ 35 (* x (/ 100.0 nstrings))))
 			(range 0 nstrings))
-	string-x1s (map-indexed (fn [i x] (+ x (* 40.0 (/ 1 (+ i nstrings)))))
-				string-x0s)
+	thickest-string (first (sort < strings))
+	string-x1s (map (fn [x h] (+ x 0.1 (* 4.0 (/ thickest-string h))))
+			string-x0s
+			strings)
 	color-cycle
           (fn [n reps]
 	      (let [from-0 (< reps 0)
@@ -100,7 +102,7 @@ div.multicolumn8 {
 			 string-x1s))
 	 ;; display fingering markings
 	 (apply str (map (fn [x]
-			      (svg-arrow (+ (nth string-x1s (nth x 0)) 2)
+			      (svg-arrow (+ (nth string-x1s (nth x 0)) 1)
 					 (+ string-start
 					    (* string-len (nth x 1)))
 					 (nth colors (nth x 2))))
@@ -150,8 +152,8 @@ div.multicolumn8 {
      :do-nothing
    (= line "!")
      :toggle-comment
-   (and (not comment) (re-find #"[0-9]+/[0-9]+" line))
-     (let [match (re-find #"([0-9]+)/([0-9]+)" line)]
+   (and (not comment) (re-find #"^[^!][0-9]+/[0-9]+" line))
+     (let [match (re-find #"^[^!]([0-9]+)/([0-9]+)" line)]
        (/ (read-string (nth match 1))
 	  (read-string (nth match 2))))
    (and (not comment) (re-find #"^ *[0-9]+\.?[0-9]*" line))
@@ -186,73 +188,85 @@ div.multicolumn8 {
 	;; after our first numeric result, we can start looking for a multiplier
 	(mults-rec '(1) lines true 0)))))
 
-(defn freqs-hz [base mults nmults]
-  (loop [base base mults mults degrees (cycle (range 0 nmults)) acc []]
-	(if (> base (* 440 4)) ; maximum frequency we display
-	    acc
-	  (let [next (sort (fn [x y]
-			       (> (first x)
-				  (first y)))
-			   (reduce conj acc (map (fn [d x] [(* x base) d])
+(defn freqs-hz [base mults nmults fund]
+  (let [tonic-mult (first (sort > mults))
+	adj-base (loop [base base] (if (< base fund)
+				       base
+				     (recur (/ base tonic-mult))))]
+    (loop [base adj-base mults mults degrees (cycle (range 0 nmults)) acc []]
+	  (if (> base (* 440 4)) ; maximum frequency we display
+	      acc
+	    (let [next (sort (fn [x y]
+				 (> (first x)
+				    (first y)))
+			     (reduce conj acc (map (fn [d x] [(* x base) d])
 						   degrees
 						   mults)))]
-	    (if (= next '()) '()
-	      (recur (first (first next)) mults degrees next))))))
+	      (if (= next '()) '()
+		(recur (first (first next)) mults degrees next)))))))
 
 (defn show-info [mults fundamental]
   (let [log (fn [x base] (/ (Math/log x) (Math/log base)))
 	degrees ["c" "c#" "d" "d#" "e" "f" "f#" "g" "g#" "a" "a#" "b"]]
     (map (fn [x]
-	     (let [cents (log x cents-base)
-		   degree (mod (int (/ cents 100)) 12)]
+	     (let [middle-c 261.6259
+		   cents-rel (log x cents-base)
+		   cents-abs (mod (log
+				   (/ (* fundamental x) middle-c)
+				   cents-base) 1200)
+		   degree (mod (int (Math/round (/ cents-abs 100))) 12)]
 	       (str "<tr><td>"
 		    (if (= (class x) clojure.lang.Ratio)
 			x
 		      (format "%.4f" (* x 1.0))) "</td><td>"
-		    (format "%.3f" cents) "</td><td>"
+		    (format "%.3f" cents-rel) "</td><td>"
 		    (nth degrees degree)
-		    "+" (int (- (mod cents 1200) (* degree 100))) "</td><td>"
+		    (if (< degree (/ cents-abs 100)) "+" "-")
+		    (int (Math/abs (- (mod cents-abs 1200) (* degree 100))))
+		    "</td><td>"
 		    ;; need the 1.0 for float contagion, naturally
 		    (format "%.4f" (* x fundamental 1.)) "</td></tr>")))
 	 (sort mults))))
      
 (defn process-scale-request [scl strs fund]
+  {:status 200
+  :headers {"Content-Type" "application/xhtml+xml"}
+  :body
   (let [scale-request (str/split scl #":")
-       name (nth scale-request 0)
-       header (str "<html xmlns='http://www.w3.org/1999/xhtml'><head>
+	name (nth scale-request 0)
+	header (str "<html xmlns='http://www.w3.org/1999/xhtml'><head>
 <title>" name "</title><link href=\"scales.css\" rel=\"stylesheet\" type=\"text/css\"></link></head><body>")
-       footer (str "</div></body></html>")
-       scale-text (try (slurp (str "scl/" name ".scl"))
-		       (catch Exception e
-			      (str "failed in opening file: scl/" name "<br/>"
-				   (.getMessage e))))
-       lines (str/split-lines scale-text)
-       mults+len (lines-rec lines)
-       mults-len (nth mults+len 1)
-       mults (nth mults+len 0)
-       fundamental (string->number fund 130.813)
-       default-seq (iterate (fn [x] (* x 1.5)) fundamental)
-       default-strings (take 4 default-seq)
-       strings (if (nil? strs)
-		   default-strings
-		 (map string->number (str/split strs #":")
-		    default-seq))]
-    {:status 200
-     :headers {"Content-Type" "application/xhtml+xml"}
-     :body
-     (str header "<h1>" name "</h1><br/><div class=\"multicolumn2\">"
-	  "<div float=\"left\" margin=\"0\" padding=\"0\">"
-	  "<table border=\"1\"><tr>"
-	  "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
-	  (apply str (show-info mults fundamental))
-	  "</table>"
-	  "<pre>"
-	  (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
-	  "</pre>"
-	  "</div>"
-	  (diagram (all-spots (freqs-hz fundamental (sort > mults) mults-len)
-			      strings) mults-len strings)
-	  footer)}))
+	footer (str "</div></body></html>")
+	scale-text (try (slurp (str "scl/" name ".scl"))
+			(catch Exception e
+			       (str "failed in opening file: scl/" name "<br/>"
+				    (.getMessage e))))
+	lines (str/split-lines scale-text)
+	mults+len (lines-rec lines)
+	mults-len (nth mults+len 1)
+	mults (nth mults+len 0)
+	default-fund 130.813
+	fundamental (string->number fund default-fund)
+	default-seq (iterate (fn [x] (* x 1.5)) default-fund)
+	default-strings (take 4 default-seq)
+	strings (if (nil? strs)
+		    default-strings
+		  (map string->number (str/split strs #":")
+		       default-seq))]
+    (str header "<h1>" name "</h1><br/><div class=\"multicolumn2\">"
+	 "<div float=\"left\" margin=\"0\" padding=\"0\">"
+	 "<table border=\"1\"><tr>"
+	 "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
+	 (apply str (show-info mults fundamental))
+	 "</table>"
+	 "<pre>"
+	 (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
+	 "</pre>"
+	 "</div>"
+	 (diagram (all-spots (freqs-hz fundamental (sort > mults) mults-len
+				       (first (sort < strings)))
+			     strings) mults-len strings)
+	 footer))})
 
 (def scl-memo (memoize list-scales))
 
