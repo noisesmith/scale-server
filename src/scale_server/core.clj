@@ -33,6 +33,8 @@ div.multicolumn8 {
 }
 "})
 
+(defn debug [& args]
+  (spit "debug.log" (apply str args)))
 
 (defn name-to-url [fname]
   (let [name (nth (re-find #"(.*)(.scl)" fname) 1)]
@@ -48,7 +50,7 @@ div.multicolumn8 {
 	    (apply str (map name-to-url (sort scale-files)))
 	    footer)))
 
-(defn diagram [positions scale-count]
+(defn diagram [positions scale-count strings]
   (let [svg-rect (fn [x0 y0 x1 y1 color]
 		     (str "<path d=\"M" x0 " " y0 " L" x1 " " y0 " L" x1 " "
 			  y1 " L" x0 " " y1 "Z\" fill=\"" color "\"/>\n"))
@@ -64,8 +66,11 @@ div.multicolumn8 {
 	string-start 10.
 	string-end 600.
 	string-len (- string-end string-start)
-	string-x0s [35 75 115 155]
-	string-x1s [53 89 126 163]
+	nstrings (reduce (fn [x y] (+ 1 x)) 0 strings)
+	string-x0s (map (fn [x] (+ 35 (* x (/ 100.0 nstrings))))
+			(range 0 nstrings))
+	string-x1s (map-indexed (fn [i x] (+ x (* 40.0 (/ 1 (+ i nstrings)))))
+				string-x0s)
 	color-cycle
           (fn [n reps]
 	      (let [from-0 (< reps 0)
@@ -84,16 +89,17 @@ div.multicolumn8 {
 		    (color-cycle scale-count -1)
 		    (color-cycle scale-count 2)
 		    (color-cycle scale-count 3))]
-     (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 200 600\">\n"
-	  ; display instrument strings
-	  (apply str (map (fn [x]
-			      (svg-rect (nth string-x0s x)
-					string-start
-					(nth string-x1s x)
-					string-end "black"))
-			  (range 0 4)))
-	  ; display fingering markings
-	  (apply str (map (fn [x]
+    (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 100 600\">\n"
+	 ;; display instrument strings
+	 (apply str (map (fn [x0 x1]
+			     (svg-rect x0
+				       string-start
+				       x1
+				       string-end "black"))
+			 (take nstrings string-x0s)
+			 string-x1s))
+	 ;; display fingering markings
+	 (apply str (map (fn [x]
 			      (svg-arrow (+ (nth string-x1s (nth x 0)) 2)
 					 (+ string-start
 					    (* string-len (nth x 1)))
@@ -108,15 +114,10 @@ div.multicolumn8 {
 	  "</svg>"
 	  "</div>\n")))
 
-(def fundamental 130.813)
-
 (def cents-base (Math/pow 2 (/ 1 1200)))
 
-(defn all-spots [freqs]
-  (let [string-data [[fundamental 0]
-		     [(* fundamental (Math/pow cents-base 700)) 1]
-		     [(* fundamental (Math/pow cents-base 1400)) 2]
-		     [(* fundamental (Math/pow cents-base 2100)) 3]]
+(defn all-spots [freqs strings]
+  (let [string-data (map-indexed (fn [i x] [x i]) strings)
 	two-oct-plus 4.1
 	coord (fn [hz hz-pos degree]
 		  (let [base-hz (nth hz-pos 0)
@@ -124,13 +125,24 @@ div.multicolumn8 {
 					; stop display at just over two octaves
 		    (if (or (< hz base-hz) (> hz (* base-hz two-oct-plus)))
 			false
-			[pos (- 1 (/ base-hz hz)) degree])))]
-    (filter identity
-	    (mapcat (fn [hz-deg] 
-			(map (fn [hz-pos]
-				 (coord (nth hz-deg 0) hz-pos (nth hz-deg 1)))
-			     string-data))
-		    freqs))))
+			[pos (- 1 (/ base-hz hz)) degree])))
+	spots (filter identity
+		      (mapcat (fn [hz-deg] 
+				  (map (fn [hz-pos]
+					   (coord (nth hz-deg 0)
+						  hz-pos (nth hz-deg 1)))
+				       string-data))
+			      freqs))]
+    spots))
+
+
+(defn string->number [str default]
+  (try
+    (let [n (read-string str)]
+      (if (number? n)
+	  n default))
+    (catch Exception e
+	   default)))
 
 (defn line-mult [line comment]
   (cond
@@ -187,7 +199,7 @@ div.multicolumn8 {
 	    (if (= next '()) '()
 	      (recur (first (first next)) mults degrees next))))))
 
-(defn show-info [mults]
+(defn show-info [mults fundamental]
   (let [log (fn [x base] (/ (Math/log x) (Math/log base)))
 	degrees ["c" "c#" "d" "d#" "e" "f" "f#" "g" "g#" "a" "a#" "b"]]
     (map (fn [x]
@@ -200,11 +212,12 @@ div.multicolumn8 {
 		    (format "%.3f" cents) "</td><td>"
 		    (nth degrees degree)
 		    "+" (int (- (mod cents 1200) (* degree 100))) "</td><td>"
-		    (format "%.4f" (* x fundamental)) "</td></tr>")))
+		    ;; need the 1.0 for float contagion, naturally
+		    (format "%.4f" (* x fundamental 1.)) "</td></tr>")))
 	 (sort mults))))
      
-(defn process-scale-request [req]
-  (let [scale-request (str/split req #":")
+(defn process-scale-request [scl strs fund]
+  (let [scale-request (str/split scl #":")
        name (nth scale-request 0)
        header (str "<html xmlns='http://www.w3.org/1999/xhtml'><head>
 <title>" name "</title><link href=\"scales.css\" rel=\"stylesheet\" type=\"text/css\"></link></head><body>")
@@ -214,10 +227,16 @@ div.multicolumn8 {
 			      (str "failed in opening file: scl/" name "<br/>"
 				   (.getMessage e))))
        lines (str/split-lines scale-text)
-       base 130.813
        mults+len (lines-rec lines)
        mults-len (nth mults+len 1)
-       mults (nth mults+len 0)]
+       mults (nth mults+len 0)
+       fundamental (string->number fund 130.813)
+       default-seq (iterate (fn [x] (* x 1.5)) fundamental)
+       default-strings (take 4 default-seq)
+       strings (if (nil? strs)
+		   default-strings
+		 (map string->number (str/split strs #":")
+		    default-seq))]
     {:status 200
      :headers {"Content-Type" "application/xhtml+xml"}
      :body
@@ -225,14 +244,14 @@ div.multicolumn8 {
 	  "<div float=\"left\" margin=\"0\" padding=\"0\">"
 	  "<table border=\"1\"><tr>"
 	  "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
-	  (apply str (show-info mults))
+	  (apply str (show-info mults fundamental))
 	  "</table>"
 	  "<pre>"
 	  (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
 	  "</pre>"
 	  "</div>"
-	  (diagram (all-spots (freqs-hz base (sort > mults) mults-len))
-		   mults-len)
+	  (diagram (all-spots (freqs-hz fundamental (sort > mults) mults-len)
+			      strings) mults-len strings)
 	  footer)}))
 
 (def scl-memo (memoize list-scales))
@@ -243,7 +262,9 @@ div.multicolumn8 {
   (GET "/scales.css" [] stylesheet)
   (route/resources "/")
   (GET "/showscale*" {params :query-params}
-		  (process-scale-request (get params "scale")))
+		  (process-scale-request (get params "scale")
+					 (get params "strings")
+					 (get params "fund")))
   (route/not-found "<h1>Page not found</h1>"))
 
 (def app
