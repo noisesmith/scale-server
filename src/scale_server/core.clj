@@ -42,13 +42,32 @@ div.multicolumn8 {
 
 (defn list-scales []
   (let [scale-files (fs/list-dir "scl")
-        header "<html><head><title>Scale List</title>
-<link href=\"scales.css\" rel=\"stylesheet\" type=\"text/css\"></head>"
-	intro "<body><h1>Scales available for display:</h1><div class=\"multicolumn8\">"
+        header (str "<html><head><title>Scale List</title>\n"
+		    "<link href=\"scales.css\" rel=\"stylesheet\" "
+		    "type=\"text/css\"></head>")
+	intro (str "<body><h1>Scales available for display:</h1>"
+		   "<div class=\"multicolumn8\">")
 	footer "</div></body></html>"]
-       (str header intro
-	    (apply str (map name-to-url (sort scale-files)))
-	    footer)))
+    { :status 200
+      :headers {"Content-Type" "text/html"}
+      :body (str header intro
+		 (apply str (map name-to-url (sort scale-files)))
+		 footer)
+;      :session {:fundamental 100 :strings [100 440 666]}
+}))
+
+(defn instr-link [name place strings]
+  (str "<a href=\"" place "&amp;strings="
+       (apply str (map (fn [x] (str x ":")) strings))
+       "\">show " name " </a><br/>\n"))
+
+(defn instr-links [place]
+  (str (instr-link "violin strings" place [195.998 293.665 440.0 659.255])
+       (instr-link "viola strings" place [130.813 195.998 293.665 440.0])
+       (instr-link "cello strings" place [65.406 97.999 146.832 220.0])
+       (instr-link "guitar strings" place
+		   [82.41 110 146.83 196.0 246.94 329.63])
+       (instr-link "bass strings" place [41.203 55.0 73.416 98.0])))
 
 (defn diagram [positions scale-count strings]
   (let [svg-rect (fn [x0 y0 x1 y1 color]
@@ -91,7 +110,9 @@ div.multicolumn8 {
 		    (color-cycle scale-count -1)
 		    (color-cycle scale-count 2)
 		    (color-cycle scale-count 3))]
-    (str "<div float=\"right\" margin=\"0\" padding=\"0\"><svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" viewBox=\"0 0 100 600\">\n"
+    (str "<div float=\"right\" margin=\"0\" padding=\"0\">"
+	 "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+	 "version=\"1.1\" viewBox=\"0 0 100 600\">\n"
 	 ;; display instrument strings
 	 (apply str (map (fn [x0 x1]
 			     (svg-rect x0
@@ -136,7 +157,6 @@ div.multicolumn8 {
 				       string-data))
 			      freqs))]
     spots))
-
 
 (defn string->number [str default]
   (try
@@ -228,14 +248,17 @@ div.multicolumn8 {
 		    (format "%.4f" (* x fundamental 1.)) "</td></tr>")))
 	 (sort mults))))
      
-(defn process-scale-request [scl strs fund]
-  {:status 200
-  :headers {"Content-Type" "application/xhtml+xml"}
-  :body
-  (let [scale-request (str/split scl #":")
+(defn process-scale-request [request]
+    (let [params (get request :query-params)
+        scl (get params "scale" false)
+	strs (get params "strings" false)
+	fund (get params "fund" false)
+	scale-request (str/split scl #":")
 	name (nth scale-request 0)
-	header (str "<html xmlns='http://www.w3.org/1999/xhtml'><head>
-<title>" name "</title><link href=\"scales.css\" rel=\"stylesheet\" type=\"text/css\"></link></head><body>")
+	header (str "<html xmlns='http://www.w3.org/1999/xhtml'><head>"
+		    "<title>" name "</title><link href=\"scales.css\" "
+		    "rel=\"stylesheet\" type=\"text/css\"></link></head>"
+		    "<body><a href=\"/\">scale list</a><br/>")
 	footer (str "</div></body></html>")
 	scale-text (try (slurp (str "scl/" name ".scl"))
 			(catch Exception e
@@ -245,28 +268,41 @@ div.multicolumn8 {
 	mults+len (lines-rec lines)
 	mults-len (nth mults+len 1)
 	mults (nth mults+len 0)
-	default-fund 130.813
+	default-fund (if-let [default (-> request :session :fundamental)]
+			     default 130.813)
 	fundamental (string->number fund default-fund)
-	default-seq (iterate (fn [x] (* x 1.5)) default-fund)
-	default-strings (take 4 default-seq)
-	strings (if (nil? strs)
+	default-strings (if-let [default (-> request :session :strings)]
+				default
+				(take 4 (iterate (fn [x] (* x 1.5))
+						 default-fund)))
+	strings (if (not strs)
 		    default-strings
 		  (map string->number (str/split strs #":")
-		       default-seq))]
-    (str header "<h1>" name "</h1><br/><div class=\"multicolumn2\">"
-	 "<div float=\"left\" margin=\"0\" padding=\"0\">"
-	 "<table border=\"1\"><tr>"
-	 "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
-	 (apply str (show-info mults fundamental))
-	 "</table>"
-	 "<pre>"
-	 (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
-	 "</pre>"
-	 "</div>"
-	 (diagram (all-spots (freqs-hz fundamental (sort > mults) mults-len
-				       (first (sort < strings)))
-			     strings) mults-len strings)
-	 footer))})
+		       (cycle default-strings)))
+	body (str header "<h1>" name "</h1><br/>"
+		  (instr-link "edit strings in url"
+			      (str "showscale?&amp;scale=" scl)
+			      strings)
+		  (instr-links (str "showscale?&amp;scale=" scl))
+		  "<div class=\"multicolumn2\">"
+		  "<div float=\"left\" margin=\"0\" padding=\"0\">"
+		  "<table border=\"1\"><tr>"
+		  "<th>mult</th><th>cents</th><th>note</th><th>hz</th></tr>"
+		  (apply str (show-info mults fundamental))
+		  "</table>"
+		  "<pre>"
+		  (str/escape scale-text {\< "&lt;", \> "&gt;", \& "&amp;"})
+		  "</pre>"
+		  "</div>"
+     		  (diagram (all-spots (freqs-hz fundamental (sort > mults)
+						mults-len
+						(first (sort < strings)))
+				      strings) mults-len strings)
+		  footer)]
+      { :status 200
+        :headers {"Content-Type" "application/xhtml+xml"}
+	:body body
+	:session {:fundamental fundamental :strings strings}}))
 
 (def scl-memo (memoize list-scales))
 
@@ -275,10 +311,10 @@ div.multicolumn8 {
   (GET "/list" [] (scl-memo))
   (GET "/scales.css" [] stylesheet)
   (route/resources "/")
-  (GET "/showscale*" {params :query-params}
-		  (process-scale-request (get params "scale")
-					 (get params "strings")
-					 (get params "fund")))
+  (GET "/showscale*" request ;{params :query-params}
+		  (process-scale-request request)) ;(get params "scale")
+		  ;;(get params "strings")
+		  ;;(get params "fund")))
   (route/not-found "<h1>Page not found</h1>"))
 
 (def app
